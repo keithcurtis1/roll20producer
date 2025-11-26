@@ -1816,10 +1816,10 @@ const PORTAL_HELP_TEXT = `
 <li>Create portals on the map</li>
 <li>Lock / unlock them</li>
 <li>Toggle open/closed state</li>
-<li>Set LOS and light-blocking behavior</li>
-<li>Auto-orient windows by their drawn direction</li> 
-<li>Mirror and rotate portals</li>
-<li>Bulk-select and modify portals</li>
+<li>Shutter / unshutter windows</li>
+<li>Hide / unhide doors</li> 
+<li>Convert Doors and Windows from paths or pathv2 objects</li>
+<li>Bulk-select and modify portal Properties</li>
 </ul>
 
 <p><strong>Base Command:</strong> <code>!portal</code></p>
@@ -1953,11 +1953,6 @@ function resolveColor(rawColorValue, targetType) {
     return normalizeColor(rawColorValue);
 }
 
-
-// ############################################################
-// END HELP HANDOUT CREATION SELECTION
-// COMMENT THIS SECTION OUT TO DISABLE HELP SYSTEM
-// ############################################################
 
 // --- Chat menu (whispered to GM) ---
 // Insert this block into the script (after your constants / helper defs)
@@ -2593,6 +2588,7 @@ let color =
 });
 
 { try { throw new Error(''); } catch (e) { API_Meta.Portal.lineCount = (parseInt(e.stack.split(/\n/)[1].replace(/^.*:(\d+):.*$/, '$1'), 10) - API_Meta.Portal.offset); } }
+
 
 
 
