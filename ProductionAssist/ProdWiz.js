@@ -1764,7 +1764,25 @@ handoutHTML = {
 //  Portal - Door and Window Control
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
+var API_Meta = API_Meta || {};
+API_Meta.Portal = {
+    offset: Number.MAX_SAFE_INTEGER,
+    lineCount: -1
+}; {
+    try {
+        throw new Error('');
+    } catch (e) {
+        API_Meta.Portal.offset = (parseInt(e.stack.split(/\n/)[1].replace(/^.*:(\d+):.*$/, '$1'), 10) - (4));
+    }
+}
+//Portal - A sccript to control and convert doors and windows.
 on('ready', () => {
+    
+            const version = '1.0.0'; //version number set here
+        log('-=> Portal v' + version + ' is loaded. Command !portal creates chat menu to convert and control doors and windows.');
+
+    
+    
     const CMD = '!portal';
 let testthingie = "werwers"
 
@@ -1773,11 +1791,11 @@ let testthingie = "werwers"
         window: '#00bfff'
     };
 
-    const WINDOW_PROPS = ['color','x','y','isopen','islocked'];
+    const WINDOW_PROPS = ['color','x','y','isopen','islocked', 'isshuttered'];
     const DOOR_PROPS   = ['color','x','y','isopen','islocked','issecret'];
 
     const DOOR_DEFAULTS = { color: DEFAULT_COLORS.door, x: 0, y: 0, isOpen: false, isLocked: false, isSecret: false };
-    const WINDOW_DEFAULTS = { color: DEFAULT_COLORS.window, x: 0, y: 0, isOpen: false, isLocked: false };
+    const WINDOW_DEFAULTS = { color: DEFAULT_COLORS.window, x: 0, y: 0, isOpen: false, isLocked: false , isShuttered: false };
 
     // ---------- Utilities ----------
     
@@ -1834,6 +1852,7 @@ const PORTAL_HELP_TEXT = `
   <li><code>--isLocked|true/false/flip</code></li>
   <li><code>--isOpen|true/false/flip</code></li>
   <li><code>--isSecret|true/false/flip</code></li>
+  <li><code>--isShuttered|true/false/flip</code></li>
   <li><code>--color|#rrggbb</code></li>
   <li><code>--color|default</code> — sets selected doors or windows to Roll20 defaults</li>
   <li><code>--key|string</code></li>
@@ -1910,7 +1929,7 @@ const handleHelp = (msg) => {
 <div style="background:#111; padding:10px; border:1px solid #555; border-radius:6px; color:#eee;">
     <div style="font-size:110%; font-weight:bold; margin-bottom:5px;">Portal Help</div>
     <a href="${link}" target="_blank" style="color:#ff00ff; font-weight:bold;">Open Help Handout</a>
-</div>`.trim();
+</div>`.trim().replace(/\r?\n/g, '');
 
     sendChat("Portal", `/w gm ${box}`);
 };
@@ -1950,7 +1969,7 @@ function resolveColor(rawColorValue, targetType) {
 const CSS = {
   container: 'position:relative; left:-20px; width:100%; border:1px solid #111; background:#ddd; color:#111; padding:6px; margin:4px; border-radius:6px; font-size:13px; line-height:1.5;',
   title: 'width:100%; border:none; background:#444; padding:1px; margin-bottom:5px; border-radius:4px; font-size:14px; line-height:1.5; color:#eee; font-weight:bold; text-align:center;',
-  label: 'display:inline-block; font-weight:bold; margin:4px 6px 0 0; width:50px;',
+  label: 'display:inline-block; font-weight:bold; margin:4px 6px 0 0; width:60px;',
   button: 'box-shadow:inset 0px 1px 3px 0px #555; background:linear-gradient(to bottom, #333 5%, #555 100%); background-color:#444; border-radius:4px; min-width:10px; text-align:center; border:1px solid #566963; display:inline-block; cursor:pointer; color:#eee; font-size:13px; font-weight:bold; padding:1px 5px; margin:1px; text-decoration:none; text-shadow:0px -1px 0px #2b665e;',
   active: 'font-weight:bold !important; background:#555;',
   // new toggle-specific styles (kept inline in CSS object per requirement)
@@ -2037,10 +2056,17 @@ function buildMenuHtml() {
   </div>
 
   <div style="margin-bottom:6px;">
-    <span style="${CSS.label}">Special</span>
+    <span style="${CSS.label}">Doors</span>
     ${buildBtn(buildCmd('!portal --isSecret|true', mode), 'Hidden', null, 'Set door as secret / hidden')}
     ${buildBtn(buildCmd('!portal --isSecret|false', mode), 'Visible', null, 'Set door as visible')}
   </div>
+
+  <div style="margin-bottom:6px;">
+    <span style="${CSS.label}">Windows</span>
+    ${buildBtn(buildCmd('!portal --isShuttered|true', mode), 'Shuttered', null, 'Set window as shuttered')}
+    ${buildBtn(buildCmd('!portal --isShuttered|false', mode), 'Unshuttered', null, 'Set window as unshuttered')}
+  </div>
+
 
   ${PORTAL_HELP_ENABLED ? `
   <div style="margin-bottom:6px;">
@@ -2048,8 +2074,8 @@ function buildMenuHtml() {
     ${buildBtn('!portal --help', 'Help', null, 'Open the Portal help handout')}
   </div>` : ``}
 </div>`.trim();
-
-    return html;
+return html.replace(/\r?\n/g, '');
+//    return html;
 }
 
 
@@ -2296,6 +2322,7 @@ function createPortalFromEndpoints(type, color, pageid, start, end) {
         path: { handle0, handle1 },
         isOpen: false,
         isLocked: false,
+        isShuttered: false,
         layer: 'walls'
     });
 }
@@ -2323,6 +2350,7 @@ const color =
         if (targetType === 'window') {
             base.isOpen = existingObj.get('isOpen') !== undefined ? existingObj.get('isOpen') : WINDOW_DEFAULTS.isOpen;
             base.isLocked = existingObj.get('isLocked') !== undefined ? existingObj.get('isLocked') : WINDOW_DEFAULTS.isLocked;
+            base.isLocked = existingObj.get('isShuttered') !== undefined ? existingObj.get('isShuttered') : WINDOW_DEFAULTS.isShuttered;
         } else if (targetType === 'door') {
             base.isOpen = existingObj.get('isOpen') !== undefined ? existingObj.get('isOpen') : DOOR_DEFAULTS.isOpen;
             base.isLocked = existingObj.get('isLocked') !== undefined ? existingObj.get('isLocked') : DOOR_DEFAULTS.isLocked;
@@ -2351,12 +2379,13 @@ function applyAttributesToPortal(obj, attrs) {
         const rawVal = attrs[rawKey];
 
         // ---------- Boolean attributes ----------
-        if (['isopen','islocked','issecret'].includes(key)) {
+        if (['isopen','islocked','issecret','isshuttered'].includes(key)) {
 
             // map lowercase to actual Roll20 property names
             const propMap = {
                 isopen: 'isOpen',
                 islocked: 'isLocked',
+                isshuttered: 'isShuttered',
                 issecret: 'isSecret'
             };
             const trueKey = propMap[key];
@@ -2562,6 +2591,9 @@ let color =
         }
     });
 });
+
+{ try { throw new Error(''); } catch (e) { API_Meta.Portal.lineCount = (parseInt(e.stack.split(/\n/)[1].replace(/^.*:(\d+):.*$/, '$1'), 10) - API_Meta.Portal.offset); } }
+
 
 
 
