@@ -3,7 +3,7 @@
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@
 // Changelog
 // 0.9.28
-// Improved Macro and Rollable table automation to account for split tables
+// Improved Macro and Rollable table automation to account for split tables, caught outlier for percentile tables.
 // 0.9.27
 // Fixed Math on Map Scale Setting (DLTool)
 // 0.9.26
@@ -20141,7 +20141,12 @@ const TableMacroBuilder = (() => {
       const rangeMatch = text.match(/^(\d+)\s*[-\u2013\u2014]\s*(\d+)$/);
       if (rangeMatch) {
         const lo = parseInt(rangeMatch[1], 10);
-        const hi = parseInt(rangeMatch[2], 10);
+        let hi = parseInt(rangeMatch[2], 10);
+        // d100 percentile convention: "00" means 100, not 0 (e.g. "97-00"
+        // means 97-100). Only applies when the high side is literally "00"
+        // and the low side is a positive number, so a genuine "0-5" range
+        // elsewhere isn't affected.
+        if (rangeMatch[2] === '00' && lo > 0) hi = 100;
         if (!isNaN(lo) && !isNaN(hi) && hi >= lo) {
           const values = [];
           for (let v = lo; v <= hi; v++) values.push(v);
@@ -20149,7 +20154,11 @@ const TableMacroBuilder = (() => {
         }
       }
 
-      // single integer
+      // single integer — "00" alone also means 100 under the same d100
+      // percentile convention
+      if (text === '00') {
+        return { type: 'single', values: [100] };
+      }
       const singleMatch = text.match(/^\d+$/);
       if (singleMatch) {
         return { type: 'single', values: [parseInt(text, 10)] };
