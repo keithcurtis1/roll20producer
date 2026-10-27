@@ -1,8 +1,10 @@
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@
-//       PRODWIZ 0.9.29
+//       PRODWIZ 0.9.30
 //       September 12, 2026
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@
 // Changelog
+// 0.9.30
+// Rollable Tables now GM-only be default. All entries preceded with invisible character, not just numeric-leading entries.
 // 0.9.29
 // Improved Token Action handling. Added version reminder. Improved HeaderLinks for displaying folder structure
 // 0.9.28
@@ -71,8 +73,8 @@ const Roll20Pro = (() => {
     }
     
     const scriptName = "Roll20 Production Wizard",
-        version = "0.9.87",
-        lastUpdated = "September 12, 2026",
+        version = "0.9.30",
+        lastUpdated = "Ocotber 27, 2026",
         
         styles = {
             reset: 'padding: 0; margin: 0;',
@@ -7075,11 +7077,27 @@ const OutputDebugInfo = (msg,ids /*, modlist, badCmds */) => {
 //   TOKEN ACTION MAKER
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
-// Script:  tokenActionMaker - Token Action Maker (merged Token Action
-//          Builder + legacy Token Action Maker), development build
-// Author: Keith Curtis
-// Date: 2026-09-20
-
+// Script: Token Action Maker (!ta) — merges the Beacon-only "Token
+// Action Builder" with the older, legacy-sheet "Token Action Maker"
+// (TAM) into one script. Author: Keith Curtis.
+//
+// Auto-detects each selected token's character sheet (Beacon D&D 2024,
+// Legacy 5E OGL, or PF2 Official — Demiplane PF2 is not supported) and
+// runs the matching engine to build its token action macros. !ta sort
+// (and the legacy !sortta form) groups and alphabetizes NPC
+// actions/attacks; delete/deleteall remove token actions on any
+// supported sheet. Legacy TAM command forms (!deleteta, !deleteallta,
+// !sortta) and the "pf2" keyword are still recognized for existing
+// macros/games. Version 2.0.2.
+//
+// 2.0.2: one shared naming rule set for Beacon, Legacy 5E and PF2
+// (spaces become hyphens on every sheet, no stray brackets, short
+// forms for common qualifiers); dropdown labels show the save bonus on
+// Beacon and the ability modifier for unlisted Legacy NPC skills and
+// saves; size-word skip checked before the grouping prefix; PF2 Attack
+// 2/3 names and ranged detection fixed for hyphenated names; a
+// character with several selected tokens is processed once per run;
+// new "nodot" keyword names Check/Save/Init without the leading period.
 
 const tokenActionMaker = (() => {
     "use strict";
@@ -7089,10 +7107,18 @@ const tokenActionMaker = (() => {
     const scriptName = "TokenActionMaker";
     const chatDisplayName = "Token Action Maker";
     const commandName = "ta";
-    const version = "2.0.0-dev.20";
+    const version = "2.0.2";
     const schemaVersion = 1.0;
 
     const DEBUG = false;
+
+    // Characters Roll20 won't run as a token action button (ability still
+    // works fine from the sheet itself). Confirmed bad so far via a
+    // separate diagnostic script: colon, pipe, close curly brace, open
+    // paren. Kept as a block list, not an allowlist, so legitimate
+    // accented/non-Roman characters in names aren't affected. Used by
+    // abbreviateName below (all sheets).
+    const UNSUPPORTED_TOKEN_ACTION_CHARS = /[:|}(]/g;
 
     // Logger
 
@@ -7254,7 +7280,9 @@ const tokenActionMaker = (() => {
         init: "init",
         initiative: "init",
         spell: "spells",
-        spells: "spells"
+        spells: "spells",
+        pspell: "pspells",
+        pspells: "pspells"
     };
 
     function isExperimentalSandbox() {
@@ -7343,6 +7371,7 @@ ${Output.list([
             `<code>!ta delete</code> — Delete unprotected token actions. Protect a macro by ending its name with a period.`,
             `<code>!ta deleteall</code> — Delete ALL token actions, protected or not.`,
             `<code>!ta sort</code> — Same as !ta, but groups and alphabetizes NPC actions (and PC attacks) instead of leaving them in the sheet's own order. See your sheet's page for specifics.`,
+            `<code>!ta nodot</code> — Names the Check, Save and Init macros without the leading period (Check/Save/Init instead of .Check/.Save/.Init). Combines with any of the above.`,
             `<code>!ta help</code> — Show this help message.`
         ])}
 Run the command with the token(s) selected — each token's sheet is auto-detected. Tokens on an unrecognized sheet (including PF2 via Demiplane) are skipped and reported.<br>
@@ -7351,6 +7380,7 @@ ${Output.heading("Categories available on every sheet")}
 (singular/plural both accepted)
 ${Output.list([
             `<b>spells</b>: Spellcasting chat menu.`,
+            `<b>pspells</b>: Same as spells, but only includes prepared spells (cantrips always included). Not part of the default set — run <code>!ta pspells</code> explicitly. Beacon and Legacy 5E only. On Legacy 5E it's a separate "Prepared-Spells" macro (falls back to showing everything if the sheet has no prepared spells marked). On Beacon it writes to the same "Spells" macro as the regular spells category, since it's the sheet's own display filter that decides what's shown, not the command — running spells and pspells together on Beacon just means whichever ran last wins.`,
             `<b>checks</b>: Ability and skill checks — dropdown showing each option's current modifier.`,
             `<b>saves</b>: Saving throws — dropdown showing each option's current modifier.`,
             `<b>init</b>: Initiative roll.`
@@ -7384,7 +7414,7 @@ ${Output.heading("Notes")}
 ${Output.list([
             `NPC action types are grouped in the token bar with name prefixes: _B.Bonus Actions, _R.Reactions, _L_Legendary, _M_Mythic.`,
             `<code>!ta sort</code> also groups plain NPC actions this way (prefixed _A.), so they cluster together instead of scattering alphabetically among everything else on the token bar.`,
-            `Checks, Saves and Init are named with a leading period (.Check/.Save/.Init) so they sort to the top of the list.`,
+            `Checks, Saves and Init are named with a leading period (.Check/.Save/.Init) so they sort to the top of the list. Add <code>nodot</code> to the command to leave the period off.`,
             `Beacon characters can take a while to process. You'll get a timestamped progress update in chat as each character finishes, and the API console log also records progress along the way — so if it looks stalled, it's usually still working.`
         ])}`,
         legacy5e: `${Output.heading("Categories")}
@@ -7398,7 +7428,7 @@ ${Output.heading("Notes")}
 ${Output.list([
             `NPC legendary/mythic actions are grouped in the token bar with name prefixes: _L_Legendary, _M_Mythic — same convention as Beacon.`,
             `<code>!ta sort</code> groups and alphabetizes plain NPC actions and PC attacks (prefixed _A.) and bonus actions (prefixed _B.), also matching Beacon's naming. Reactions, traits, and mythic actions aren't affected by sort.`,
-            `Checks, Saves and Init are named with a leading period (.Check/.Save/.Init) so they sort to the top of the list.`
+            `Checks, Saves and Init are named with a leading period (.Check/.Save/.Init) so they sort to the top of the list. Add <code>nodot</code> to the command to leave the period off.`
         ])}`,
         pf2: `${Output.heading("Categories")}
 ${Output.list([
@@ -7412,7 +7442,7 @@ ${Output.heading("Notes")}
 ${Output.list([
             `Ranged strikes get a -R suffix, plus two extra abbreviated buttons (Attack2/Attack3) alongside the main one.`,
             `<code>!ta sort</code> is not recommended for PF2 and has no effect here — alphabetizing would break the Attack-Attack2-Attack3 progression, so unsorted actions are created instead and a warning is shown.`,
-            `Checks, Saves and Init are named with a leading period (.Check/.Save/.Init) so they sort to the top of the list.`
+            `Checks, Saves and Init are named with a leading period (.Check/.Save/.Init) so they sort to the top of the list. Add <code>nodot</code> to the command to leave the period off.`
         ])}`
     };
 
@@ -7467,67 +7497,139 @@ ${Output.list([
     })();
 
 
-    // Abbreviate Names (Beacon engine)
-    function abbreviateName(name, context) {
+    // Abbreviate Names — one shared rule set for every sheet (Beacon,
+    // Legacy 5E, PF2). abbreviateCore applies the naming rules but keeps
+    // spaces; abbreviateName finishes the job (fallback for error
+    // templates, unsupported characters, spaces → hyphens, separator
+    // cleanup). PF2's Attack 2/3 names are built from abbreviateCore's
+    // output so they can still split on spaces.
+
+    // One part of a parenthetical (split on ";"). Returns a suffix:
+    // short codes attach with a hyphen ("-m", "-1H", "-3/d"), anything
+    // descriptive with an em dash ("—Humanoid/Hybrid").
+    function abbreviateParentheticalPart(part) {
+        const p = part.trim();
+        let m;
+        if (!p) return "";
+        if (/^One[-\s]?Handed$/i.test(p)) return "-1H";
+        if (/^Two[-\s]?Handed$/i.test(p)) return "-2H";
+        if (/^Melee$/i.test(p)) return "-m";
+        if (/^Ranged$/i.test(p)) return "-r";
+        if (/^Thrown$/i.test(p)) return "-t";
+        if (/^Off[-\s]?Hand$/i.test(p)) return "-OH";
+        if (/^Finesse$/i.test(p)) return "-Fnss";
+        if (/^Psionics$/i.test(p)) return "—Psi";
+        if ((m = p.match(/^(\d+)\/Day,?\s*or\s*(\d+)\/Day\s+in\s+Lair$/i))) return `-${m[1]}/d-or-${m[2]}/d-Lair`;
+        if ((m = p.match(/^(\d+)\/Day\s+Each$/i))) return `-${m[1]}/d-ea`;
+        if ((m = p.match(/^(\d+)\/Day$/i))) return `-${m[1]}/d`;
+        if ((m = p.match(/^(\d+)\/Turn$/i))) return `-${m[1]}/t`;
+        if ((m = p.match(/^Costs\s+(\d+)\s+Actions$/i))) return `—${m[1]}a`;
+        if ((m = p.match(/^Recharges?\b(.*)$/i))) {
+            const text = m[1].trim();
+            if (!text) return "—R";
+            if (/Short or Long Rest/i.test(text)) return "—R Short/Long";
+            if (/Short Rest/i.test(text)) return "—R Short";
+            if (/Long Rest/i.test(text)) return "—R Long";
+            if (/^\d+(-\d+)?$/.test(text)) return `—R${text}`;     // "5-6" → "R5-6", "6" → "R6"
+            return "—R " + text;
+        }
+        if ((m = p.match(/^(.+?)\s+Form\s+Only$/i))) {
+            return "—" + m[1].split(/\s+or\s+/i).join("/");     // "Humanoid or Hybrid Form Only" → "Humanoid/Hybrid"
+        }
+        if (/^Above Half HP$/i.test(p)) return "—HP>Half";
+        if (/^Half HP or Less$/i.test(p)) return "—HP<=Half";
+        return "—" + p;
+    }
+
+    // A whole parenthetical: each ";" part separately, then
+    // "-m" + "-1H"/"-2H" merge into "-1Hm"/"-2Hm".
+    function abbreviateParenthetical(inner) {
+        const codes = inner.split(/\s*;\s*/).map(abbreviateParentheticalPart).filter(Boolean);
+        const out = [];
+        for (let i = 0; i < codes.length; i++) {
+            if (codes[i] === "-m" && (codes[i + 1] === "-1H" || codes[i + 1] === "-2H")) {
+                out.push(codes[i + 1] + "m");
+                i++;
+                continue;
+            }
+            out.push(codes[i]);
+        }
+        return out.join("");
+    }
+
+    function abbreviateCore(name) {
         if (!name) return "";
+        let n = String(name);
 
-        name = name.replace(/ \(One[-\s]?Handed\)/i, "-1H");        // "Sword (One-Handed)" or "Sword (One Handed)" → "Sword-1H"
-        name = name.replace(/ \(Two[-\s]?Handed\)/i, "-2H");        // "Greatsword (Two-Handed)" or "Greatsword (Two Handed)" → "Greatsword-2H"
-        name = name.replace(/ \(Melee; One[-\s]?Handed\)/i, "-1Hm");// e.g., "Dagger (Melee; One-Handed)" → "Dagger-1Hm"
-        name = name.replace(/ \(Melee; Two[-\s]?Handed\)/i, "-2Hm");// e.g., "Polearm (Melee; Two-Handed)" → "Polearm-2Hm"
-        name = name.replace(/Thrown/i, "Thrn");                     // e.g., "Thrown Weapon" → "Thrn Weapon"
-        name = name.replace(/Finesse/i, "Fnss");                    // e.g., "Finesse Attack" → "Fnss Attack"
-        name = name.replace(/Dexterous/i, "Dex");                   // e.g., "Dexterous Strike" → "Dex Strike"
-        name = name.replace(/Open Hand Technique/i, "Open Hand");   // e.g., "Open Hand Technique" → "Open Hand"
-        name = name.replace(/ \(Psionics\)/i, "—Psi");              // e.g., "Mind Blast (Psionics)" → "Mind Blast—Psi"
-        name = name.replace(/ \(Melee\)/i, "-m");                   // e.g., "Punch (Melee)" → "Punch-m"
-        name = name.replace(/ \(Ranged\)/i, "-r");                  // e.g., "Bow (Ranged)" → "Bow-r"
-        name = name.replace(/\bForm Only\b/i, "Form");              // e.g., "Bear Form Only" → "Bear Form"
+        // En dash in a number range ("5–6") → hyphen
+        n = n.replace(/(\d)\s*–\s*(\d)/g, "$1-$2");
+        // Sub-option separator: "Witch Bolt - Initial Attack" → "Witch Bolt—Initial Attack"
+        n = n.replace(/\s+-\s+/g, "—");
+        // Numbered entries sort correctly: "1: Charm Ray" → "01: Charm Ray"
+        n = n.replace(/^(\d)(?=\s*:)/, "0$1");
+        // Leading "(Variant)" keeps the word, loses the brackets
+        n = n.replace(/^\(Variant\)\s*/i, "Variant ");
+        // Magic weapon bonus attaches to the name: "Handaxe +1" → "Handaxe+1"
+        n = n.replace(/\s+\+(\d)/g, "+$1");
 
-        name = name.replace(/swarm has more than half hp/i, "HP>Half"); // e.g., "swarm has more than half HP" → "HP>Half"
-        name = name.replace(/swarm has half hp or less/i, "HP<=Half");  // e.g., "swarm has half HP or less" → "HP<=Half"
+        // Parentheticals
+        n = n.replace(/\s*\(([^()]*)\)/g, (match, inner) => abbreviateParenthetical(inner));
+        // Any unmatched bracket left over
+        n = n.replace(/\s*\(/g, "—").replace(/\)/g, "");
 
-        name = name.replace(/\s?\(Recharges?(.*?)\)|\bRecharges?\s(\d+-\d+)/i,
-            (match, parenRecharge, plainRecharge) => {
-                if (parenRecharge !== undefined) {
-                    const text = parenRecharge.trim();
-                    if (!text) return "—R";
-                    if (/Short or Long Rest/i.test(text)) return "—R Short/Long";
-                    if (/Short Rest/i.test(text)) return "—R Short";
-                    if (/Long Rest/i.test(text)) return "—R Long";
-                    return "—R " + text;
-                }
-                if (plainRecharge) return "R" + plainRecharge; // e.g., "Recharge 5-6" → "R5-6"
-                return match;
-            });
+        // Word rules (anywhere in the name)
+        n = n.replace(/\bLegendary Resistance\b/gi, "Lgnd Resistance");
+        n = n.replace(/Thrown/i, "Thrn");
+        n = n.replace(/Finesse/i, "Fnss");
+        n = n.replace(/Dexterous/i, "Dex");
+        n = n.replace(/Open Hand Technique/i, "Open Hand");
+        n = n.replace(/\bForm Only\b/i, "Form");
+        n = n.replace(/swarm has more than half hp/i, "HP>Half");
+        n = n.replace(/swarm has half hp or less/i, "HP<=Half");
+        n = n.replace(/\bRecharges?\s(\d+-\d+)/i, "R$1");      // bare "Recharge 5-6" → "R5-6"
+        // PF2 action costs
+        n = n.replace(/<One Action>/i, "<1>");
+        n = n.replace(/<Two Actions>/i, "<2>");
+        n = n.replace(/<Three Actions>/i, "<3>");
 
-        name = name.replace(/\s?\((\d+)\/Day\)/i, "$1/d");       // e.g., "(3/Day)" → "3/d"
-        name = name.replace(/\s\(Costs\s(.*)\sActions\)/i, "—$1a"); // e.g., "(Costs 2 Actions)" → "—2a"
-        name = name.replace(/\sVariant\)/i, "—");                // e.g., "Ability (Variant)" → "Ability—"
+        n = n.replace(/\.+$/, "");
+        return n.trim();
+    }
 
-        name = name.replace(/\s?\(/g, "—");
-        name = name.replace(/\)/g, "");
-        name = name.replace(/\.+$/, "");
+    function abbreviateName(name, context) {
+        let n = abbreviateCore(name);
 
         // Sheet-worker error template came back instead of a real name —
         // visible cue for the player to re-run this character, now logged.
-        if (/template:error/i.test(name)) {
-            Logger.error(`Sheet returned an error template instead of a name${context ? ` (${context})` : ""}: ${name}`);
-            name = name.replace(/.*template:error.*/i, "Token Action " + (Math.floor(Math.random() * 100) + 1));
+        if (/template:error/i.test(n)) {
+            Logger.error(`Sheet returned an error template instead of a name${context ? ` (${context})` : ""}: ${n}`);
+            n = "Token Action " + (Math.floor(Math.random() * 100) + 1);
         }
 
-        // Roll20 won't render a token action button whose name has a colon
-        // (the ability still works fine from the sheet itself) — strip it.
-        name = name.replace(/:/g, "");
+        // Strip characters Roll20 won't run as a token action button
+        // (see UNSUPPORTED_TOKEN_ACTION_CHARS above).
+        n = n.replace(UNSUPPORTED_TOKEN_ACTION_CHARS, "");
 
-        // Beacon won't save or even close an ability whose name has a space
-        // in it — collapse any run of whitespace to a single hyphen. Last
-        // step, so it also cleans up the fallback name above.
-        name = name.replace(/\s+/g, "-");
+        // Beacon won't save an ability whose name has a space in it;
+        // the other sheets follow suit so names match across sheets.
+        n = n.replace(/\s+/g, "-");
 
-        return name;
+        // Separator cleanup: no doubled hyphens, no hyphen touching an
+        // em dash, nothing leading or trailing.
+        n = n.replace(/-{2,}/g, "-")
+            .replace(/-?—-?/g, "—")
+            .replace(/—{2,}/g, "—")
+            .replace(/^[-—]+|[-—]+$/g, "");
+
+        return n;
     }
 
+
+    // Name for the .Init/.Save/.Check abilities. The leading period
+    // sorts them to the top of the token bar; "nodot" drops it.
+    function basicName(base, noDot) {
+        return noDot ? base : "." + base;
+    }
 
     // Parser — !ta uses positional keywords, not --key value; a shipped
     // stable contract, so it keeps its own dedicated grammar. "pf2" is
@@ -7538,6 +7640,7 @@ ${Output.list([
         const parts = trimmed.split(/\s+/).slice(1);
         const categories = new Set();
         let useNames = false;
+        let noDot = false;
         let userSpecified = false;
         // Bare legacy "!sortta" implies sort mode + the full default
         // category list, matching TAM's original behavior. Checked against
@@ -7552,6 +7655,10 @@ ${Output.list([
             }
             if (lc === "sort" || lc === "sorted") {
                 sortMode = true;
+                return;
+            }
+            if (lc === "nodot") {
+                noDot = true;
                 return;
             }
             if (lc === "pf2") {
@@ -7575,7 +7682,8 @@ ${Output.list([
                 categories: [...Object.keys(categoryMeta), "saves", "checks", "init", "spells", "offensive", "reactive", "interaction"],
                 useNames,
                 userSpecified: false,
-                sortMode
+                sortMode,
+                noDot
             };
         }
 
@@ -7583,7 +7691,8 @@ ${Output.list([
             categories: Array.from(categories),
             useNames,
             userSpecified: true,
-            sortMode
+            sortMode,
+            noDot
         };
     }
 
@@ -7683,14 +7792,15 @@ ${Output.list([
         for (const { id, rawName } of rows) {
             if (!rawName) continue;
 
-            const name = meta.namePrefix + rawName;
-
-            // Skip if the name is *exactly* a size word.
-            if (sizeWords.includes(name.trim().toLowerCase())) {
+            // Skip if the name is *exactly* a size word. Checked on the
+            // sheet name itself, before any _B./_R./_L_ prefix is added.
+            if (sizeWords.includes(String(rawName).trim().toLowerCase())) {
                 continue;
             }
 
-            results.push({ id, name });
+            // The grouping prefix is added after abbreviation (see
+            // processBeaconToken), so it never passes through the rules.
+            results.push({ id, rawName });
         }
         return results;
     }
@@ -7737,7 +7847,7 @@ ${Output.list([
     }
 
     // Process Token (Beacon engine)
-    async function processBeaconToken(token, categories = [], useNames = false, userSpecified = false, sortMode = false) {
+    async function processBeaconToken(token, categories = [], useNames = false, userSpecified = false, sortMode = false, noDot = false) {
         const tokenObj = getObj("graphic", token._id);
         if (!tokenObj) return null;
         const characterId = tokenObj.get("represents");
@@ -7785,6 +7895,26 @@ ${Output.list([
                 continue;
             }
 
+            if (category === "pspells") {
+                // Beacon's reporder_spell-{lvl} list already reflects the
+                // sheet's own "prepared only" display filter, not the
+                // command — so this writes to the same "Spells" ability
+                // as the regular category, whichever runs last wins.
+                const doneFetch = Logger.time(`  [${characterName}] pspells fetch (levels + names)`, characterId, "pspells fetch");
+                const spells = await getSpells(characterId);
+                let macro = null;
+                if (Object.keys(spells).length > 0) {
+                    macro = await buildSpellsMacro(spells, characterName, characterId, useNames);
+                }
+                doneFetch();
+                if (macro) {
+                    const doneWrite = Logger.time(`  [${characterName}] pspells write`, characterId, "pspells write");
+                    await Queue.add(() => createTokenAction(characterId, "Spells", macro));
+                    doneWrite();
+                }
+                continue;
+            }
+
             if (category === "checks" || category === "saves" || category === "init") {
                 // init doesn't use bonuses — no fetch needed.
                 if (category !== "init" && !basicAbilityBonuses) {
@@ -7793,7 +7923,7 @@ ${Output.list([
                     doneBonusFetch();
                 }
                 const doneBasic = Logger.time(`  [${characterName}] ${category} write`, characterId, `${category} write`);
-                createBasicAbilities(characterId, category, basicAbilityBonuses);
+                createBasicAbilities(characterId, category, basicAbilityBonuses, noDot);
                 doneBasic();
                 continue;
             }
@@ -7815,7 +7945,7 @@ ${Output.list([
 
             const doneCatWrite = Logger.time(`  [${characterName}] ${category} write (${items.length} items)`, characterId, `${category} write (${items.length} items)`);
             await Promise.all(items.map(async (item) => {
-                const itemName = abbreviateName(item.name, `${characterId} ${category} ${item.id}`);
+                const itemName = (metaForType.namePrefix || "") + abbreviateName(item.rawName, `${characterId} ${category} ${item.id}`);
                 const macro = generateMacro(characterId, characterName, category, {
                     ...item,
                     name: itemName
@@ -7829,7 +7959,7 @@ ${Output.list([
 
         // Completeness check — only for basics this run actually requested;
         // one local findObjs() lookup each, not a sheet-worker round trip.
-        const basicAbilityNames = { checks: ".Check", saves: ".Save", init: ".Init" };
+        const basicAbilityNames = { checks: basicName("Check", noDot), saves: basicName("Save", noDot), init: basicName("Init", noDot) };
         const missingBasics = [];
         for (const cat of categories) {
             const abilityName = basicAbilityNames[cat];
@@ -7865,10 +7995,42 @@ ${Output.list([
         return attr ? attr.get("current") : undefined;
     }
 
-    function legacySignedBonus(characterId, attrName) {
-        const bonus = parseInt(legacyAttrCurrent(characterId, attrName)) || 0;
+    // Number stored in an attribute, or null if the attribute is
+    // missing, blank, or not a number.
+    function legacyNumber(characterId, attrName) {
+        const v = legacyAttrCurrent(characterId, attrName);
+        if (v === undefined || v === null) return null;
+        const n = parseInt(String(v).trim(), 10);
+        return isNaN(n) ? null : n;
+    }
+
+    // Ability modifier: the sheet's own <ability>_mod if saved, else
+    // worked out from the ability score, else 0.
+    function legacyAbilityMod(characterId, ability) {
+        const mod = legacyNumber(characterId, `${ability}_mod`);
+        if (mod !== null) return mod;
+        const score = legacyNumber(characterId, ability);
+        return score !== null ? Math.floor((score - 10) / 2) : 0;
+    }
+
+    // Dropdown label bonus. 2014 NPC stat blocks only list skills and
+    // saves that differ from the base value, so the sheet only stores
+    // those; anything not listed falls back to its ability modifier.
+    // Label only — the roll itself still reads the sheet at roll time.
+    function legacySignedBonus(characterId, attrName, ability) {
+        const listed = legacyNumber(characterId, attrName);
+        const bonus = listed !== null ? listed : (ability ? legacyAbilityMod(characterId, ability) : 0);
         return { bonus, sign: bonus >= 0 ? "+" : "" };
     }
+
+    const LEGACY_SKILL_ABILITY = {
+        'Acrobatics': 'dexterity', 'Animal Handling': 'wisdom', 'Arcana': 'intelligence',
+        'Athletics': 'strength', 'Deception': 'charisma', 'History': 'intelligence',
+        'Insight': 'wisdom', 'Intimidation': 'charisma', 'Investigation': 'intelligence',
+        'Medicine': 'wisdom', 'Nature': 'intelligence', 'Perception': 'wisdom',
+        'Performance': 'charisma', 'Persuasion': 'charisma', 'Religion': 'intelligence',
+        'Sleight Of Hand': 'dexterity', 'Stealth': 'dexterity', 'Survival': 'wisdom'
+    };
 
     // PF2 checks/saves — TAM used one identical giant roll-template
     // string for both NPC and PC (verified byte-identical across all
@@ -7935,11 +8097,12 @@ ${Output.list([
 
         if (checkType === 'check') { // Skills & Ability Checks
             let skillMacroArray = skillArray.map((sk, i) => {
-                const { bonus, sign } = legacySignedBonus(characterId, `${npcPrefix}${sk}${pcSuffix}`);
+                const { bonus, sign } = legacySignedBonus(characterId, `${npcPrefix}${sk}${pcSuffix}`, LEGACY_SKILL_ABILITY[skillLabels[i]]);
                 return `|${skillLabels[i]} ${sign}${bonus},+@{${npcPrefix}${sk}${pcSuffix}}@{pbd_safe}[${(skillLabels[i] + ' ').slice(0, skillLabels[i].indexOf(' '))}]]]&#125;&#125; {{rname=${skillLabels[i]}&#125;&#125; {{mod=@{${npcPrefix}${sk}${pcSuffix}}&#125;&#125; {{r1=[[@{d20} + @{${npcPrefix}${sk}${pcSuffix}}@{pbd_safe}[${(skillLabels[i] + ' ').slice(0, skillLabels[i].indexOf(' '))}]]]`;
             }),
                 abilityMacroArray = abilityArray.map((ab, i) => {
-                    const { bonus, sign } = legacySignedBonus(characterId, `${ab}_mod`);
+                    const bonus = legacyAbilityMod(characterId, ab.toLowerCase());
+                    const sign = bonus >= 0 ? "+" : "";
                     return `|${ab} ${sign}${bonus},+@{${ab}_mod}@{jack_attr}[${npcSaveArray[i]}]]]&#125;&#125; {{rname=${ab}&#125;&#125; {{mod=@{${ab}_mod}@{jack_bonus}&#125;&#125; {{r1=[[ @{d20} + @{${ab}_mod}@{jack_attr}[${npcSaveArray[i]}]]]`;
                 }),
                 abilityMacro = `@{wtype}&{template:${template}} ${npcName} @{rtype}?{Ability${skillMacroArray.join('')}${abilityMacroArray.join('')}}}} {{global=@{global_skill_mod}}} {{type=Check}} {{typec=Check}} @{charname_output}`;
@@ -7948,7 +8111,7 @@ ${Output.list([
 
         if (checkType === 'save') { // Saves
             let saveMacroArray = abilityArray.map((ab, i) => {
-                const { bonus, sign } = legacySignedBonus(characterId, `${npcPrefix}${saveArray[i]}_save${pcSuffix}`);
+                const { bonus, sign } = legacySignedBonus(characterId, `${npcPrefix}${saveArray[i]}_save${pcSuffix}`, ab.toLowerCase());
                 // Fixed pre-existing typo: original was missing the ";"
                 // after the second &#125; on this line ("&#125;&#125 {{mod=").
                 return `|${ab} ${sign}${bonus}, +@{${npcPrefix}${saveArray[i]}_save${pcSuffix}}@{pbd_safe}[${npcSaveArray[i]} SAVE]]]&#125;&#125; {{rname=${ab} Save&#125;&#125; {{mod=@{${ab}_save_bonus}&#125;&#125; {{r1=[[@{d20}+@{${npcPrefix}${saveArray[i]}_save${pcSuffix}}@{pbd_safe}[${npcSaveArray[i]} SAVE]]]`;
@@ -7956,37 +8119,6 @@ ${Output.list([
                 saveMacro = `@{wtype}&{template:${template}} ${npcName} @{rtype}?{Saving Throw${saveMacroArray.join('')}}}} {{global=@{global_save_mod}}} {{type=Save}} {{typec=Save}} @{charname_output}`;
             return (selectedMacro) ? saveMacro.replace(/@{/g, '@{selected|') : saveMacro;
         }
-    }
-
-    // Legacy name abbreviation — TAM's own abbreviateName, separate
-    // from Beacon's (different regex set, no space-to-hyphen
-    // collapse needed on the legacy sheet). Ported verbatim.
-    function legacyAbbreviateName(name) {
-        name = name.replace(" (One-Handed)", "-1H");
-        name = name.replace(" (Two-Handed)", "-2H");
-        name = name.replace(" (Melee; One-Handed)", "-1Hm");
-        name = name.replace(" (Melee; Two-Handed)", "-2Hm");
-        name = name.replace(" (Psionics)", "(Psi)");
-        name = name.replace(" (Melee)", "-m");
-        name = name.replace(" (Ranged)", "-r");
-        name = name.replace("swarm has more than half HP", "HP>Half");
-        name = name.replace("swarm has half HP or less", "HP<=Half");
-        name = name.replace(/\s\(Recharge(.*)Short or Long Rest\)/, "-(R Short/Long)");
-        name = name.replace(/\s\(Recharge(.*)Short Rest\)/, "-(R Short)");
-        name = name.replace(/\s\(Recharge(?=.*Long Rest)(?:(?!Short).)*\)/, "-(R Long)");
-        name = name.replace(/\sVariant\)/, ')');
-        name = name.replace(/\s\(Recharge\s(.*)\)/, '-(R$1)');
-        name = name.replace(/\s\(Costs\s(.*)\sActions\)/, '-($1a)');
-        name = name.replace(/\s\(Costs\s(.*)\sActions\)/, '-($1a)');
-        // PF2 (unused on this sheet, kept since TAM's abbreviateName
-        // is shared across sheet types)
-        name = name.replace(/<One Action>/i, '<1>');
-        name = name.replace(/<Two Actions>/i, '<2>');
-        name = name.replace(/<Three Actions>/i, '<3>');
-        // Roll20 won't render a token action button whose name has a colon
-        // (the ability still works fine from the sheet itself) — strip it.
-        name = name.replace(/:/g, "");
-        return name;
     }
 
     // Abbreviates a name to its words' first two characters each, used
@@ -8035,7 +8167,8 @@ ${Output.list([
                 actionCost = actionCost.replace(' <>', '');
             }
 
-            let repeatingName = legacyAbbreviateName(attr.get('current').replace(/\.\s*$/, "") + actionCost);
+            const rawName = attr.get('current').replace(/\.\s*$/, "") + actionCost;
+            let repeatingName = abbreviateName(rawName, `${characterId} ${attr.get('name')}`);
 
             // Grouping prefixes, matching Beacon's family: legendary/
             // mythic always group ("_L_"/"_M_"); plain NPC actions/PC
@@ -8049,9 +8182,19 @@ ${Output.list([
             } else if (sortMode) {
                 repeatingName = "_A." + repeatingName;
             }
-            if (sheetType === 'pf2' && macroPatternTemplate.includes('repeating_ranged-strikes')) {
+
+            // PF2 ranged strikes: decided by the section the row came
+            // from, not by looking for "-R" in the (hyphenated) name.
+            const isRangedStrike = sheetType === 'pf2' && macroPatternTemplate.includes('repeating_ranged-strikes');
+            if (isRangedStrike) {
                 repeatingName = repeatingName + '-R';
             }
+
+            // PF2 Attack 2/3 button base: first two letters of each word,
+            // taken from the name before spaces become hyphens.
+            const attackBase = sheetType === 'pf2'
+                ? legacyFirstCharacters(abbreviateCore(rawName)).replace(UNSUPPORTED_TOKEN_ACTION_CHARS, "") + (isRangedStrike ? '-R' : '')
+                : '';
 
             const idRef = useNames ? characterName : characterId;
             const macroSuffix = macroPatternTemplate.replace(/%%RID%%/g, repeatingId);
@@ -8067,24 +8210,24 @@ ${Output.list([
 
             if (sheetType === 'pf2' && repeatingAction.includes('ATTACK-DAMAGE-NPC')) {
                 createObj('ability', {
-                    name: legacyFirstCharacters(repeatingName) + (repeatingName.includes('-R') ? '-R2' : '2'),
+                    name: attackBase + '2',
                     action: repeatingAction.replace('ATTACK-DAMAGE-NPC', 'ATTACK-DAMAGE-NPC2'),
                     characterid: characterId, istokenaction: true
                 });
                 createObj('ability', {
-                    name: legacyFirstCharacters(repeatingName) + (repeatingName.includes('-R') ? '-R3' : '3'),
+                    name: attackBase + '3',
                     action: repeatingAction.replace('ATTACK-DAMAGE-NPC', 'ATTACK-DAMAGE-NPC3'),
                     characterid: characterId, istokenaction: true
                 });
             }
             if (sheetType === 'pf2' && repeatingAction.includes('ATTACK-DAMAGE') && !repeatingAction.includes('ATTACK-DAMAGE-NPC')) {
                 createObj('ability', {
-                    name: legacyFirstCharacters(repeatingName) + (repeatingName.includes('-R') ? '-R2' : '2'),
+                    name: attackBase + '2',
                     action: repeatingAction.replace('ATTACK-DAMAGE', 'ATTACK-DAMAGE2'),
                     characterid: characterId, istokenaction: true
                 });
                 createObj('ability', {
-                    name: legacyFirstCharacters(repeatingName) + (repeatingName.includes('-R') ? '-R3' : '3'),
+                    name: attackBase + '3',
                     action: repeatingAction.replace('ATTACK-DAMAGE', 'ATTACK-DAMAGE3'),
                     characterid: characterId, istokenaction: true
                 });
@@ -8095,8 +8238,11 @@ ${Output.list([
     // Legacy 5E spell chat menu — groups repeating_spell-N entries
     // by level into a single "Spells" ability. Ported verbatim,
     // including TAM's own attribute-matching regex as originally
-    // written.
-    function createLegacySpell(characterId) {
+    // written. preparedOnly (pspells): keeps a row only if its sibling
+    // ..._spellprepared attribute is "1" — cantrips always included,
+    // and if the character has no such attribute at all, falls back
+    // to showing everything.
+    function createLegacySpell(characterId, preparedOnly = false) {
         const repeatingAttrs = filterObjs(o =>
             o.get('type') === 'attribute' &&
             o.get('characterid') === characterId &&
@@ -8107,6 +8253,22 @@ ${Output.list([
             return;
         }
 
+        let preparedRowIds = null;
+        if (preparedOnly) {
+            const preparedAttrs = filterObjs(o =>
+                o.get('type') === 'attribute' &&
+                o.get('characterid') === characterId &&
+                o.get('name').match(/repeating_spell-[^{(np)][\S+_[^_]+_spellprepared\b/)
+            );
+            if (preparedAttrs.length > 0) {
+                preparedRowIds = new Set(
+                    preparedAttrs
+                        .filter(a => String(a.get('current')) === '1')
+                        .map(a => a.get('name').split('_')[2])
+                );
+            }
+        }
+
         const sb = {
             'Cantrips': [],
             '1st': [], '2nd': [], '3rd': [], '4th': [], '5th': [],
@@ -8115,7 +8277,8 @@ ${Output.list([
 
         for (const s of repeatingAttrs) {
             let level = s.get('name').split('_')[1].replace('spell-', '');
-            const apiButton = "[" + s.get('current') + "](~repeating_spell-" + level + "_" + s.get('name').split('_')[2] + "_spell)";
+            const rowId = s.get('name').split('_')[2];
+            const apiButton = "[" + s.get('current') + "](~repeating_spell-" + level + "_" + rowId + "_spell)";
 
             if (level === "1") level = "1st";
             else if (level === "2") level = "2nd";
@@ -8128,6 +8291,10 @@ ${Output.list([
             else if (level === "9") level = "9th";
             else level = "Cantrips";
 
+            if (preparedRowIds && level !== "Cantrips" && !preparedRowIds.has(rowId)) {
+                continue;
+            }
+
             sb[level].push(apiButton);
         }
 
@@ -8139,10 +8306,10 @@ ${Output.list([
 
         let spellText = "";
         for (const e of sk) {
-            spellText += "**" + e + ":**" + "\n" + sb[e].join(' | ') + "\n\n";
+            spellText += "**" + e + ":**" + "\n" + sb[e].join(' ') + "\n\n";
         }
 
-        createTokenAction(characterId, "Spells", "/w @{character_name} &{template:atk} {{desc=" + spellText + "}}");
+        createTokenAction(characterId, preparedOnly ? "Prepared-Spells" : "Spells", "/w @{character_name} &{template:atk} {{desc=" + spellText + "}}");
     }
 
     // PF2 spell chat menu — innate/focus/cantrips/normal spells (the
@@ -8214,7 +8381,7 @@ ${Output.list([
     // equivalent is "action"/"actions" (a different sheet section).
     // "reactive"/"interaction" are NPC-only. "trait" has no effect on
     // this sheet.
-    function processPF2Token(token, categories = [], useNames = false, userSpecified = false) {
+    function processPF2Token(token, categories = [], useNames = false, userSpecified = false, noDot = false) {
         const tokenObj = getObj("graphic", token._id);
         if (!tokenObj) return null;
         const characterId = tokenObj.get("represents");
@@ -8234,13 +8401,13 @@ ${Output.list([
 
         if (isNpc) {
             if (has("init")) {
-                createTokenAction(characterId, ".Init", PF2_INIT_MACRO);
+                createTokenAction(characterId, basicName("Init", noDot), PF2_INIT_MACRO);
             }
             if (has("checks")) {
-                createTokenAction(characterId, ".Check", pf2CreateCheckMacro(characterId));
+                createTokenAction(characterId, basicName("Check", noDot), pf2CreateCheckMacro(characterId));
             }
             if (has("saves")) {
-                createTokenAction(characterId, ".Save", pf2CreateSaveMacro(characterId));
+                createTokenAction(characterId, basicName("Save", noDot), pf2CreateSaveMacro(characterId));
             }
             if (has("attacks")) {
                 createLegacyRepeating(characterId, characterName, /repeating_melee-strikes_[^_]+_weapon\b/, 'repeating_melee-strikes_%%RID%%_ATTACK-DAMAGE-NPC', useNames, 'pf2');
@@ -8260,13 +8427,13 @@ ${Output.list([
             }
         } else {
             if (has("init")) {
-                createTokenAction(characterId, ".Init", PF2_INIT_MACRO);
+                createTokenAction(characterId, basicName("Init", noDot), PF2_INIT_MACRO);
             }
             if (has("checks")) {
-                createTokenAction(characterId, ".Check", pf2CreateCheckMacro(characterId));
+                createTokenAction(characterId, basicName("Check", noDot), pf2CreateCheckMacro(characterId));
             }
             if (has("saves")) {
-                createTokenAction(characterId, ".Save", pf2CreateSaveMacro(characterId));
+                createTokenAction(characterId, basicName("Save", noDot), pf2CreateSaveMacro(characterId));
             }
             if (has("attacks")) {
                 createLegacyRepeating(characterId, characterName, /repeating_melee-strikes_[^_]+_weapon\b/, 'repeating_melee-strikes_%%RID%%_ATTACK-DAMAGE', useNames, 'pf2');
@@ -8289,7 +8456,7 @@ ${Output.list([
     // keywords have no independent effect on this sheet, they're
     // absorbed into "attacks". No completeness check (unlike Beacon) —
     // every write here is synchronous, so nothing can silently fail.
-    function processLegacy5eToken(token, categories = [], useNames = false, userSpecified = false, sortMode = false) {
+    function processLegacy5eToken(token, categories = [], useNames = false, userSpecified = false, sortMode = false, noDot = false) {
         const tokenObj = getObj("graphic", token._id);
         if (!tokenObj) return null;
         const characterId = tokenObj.get("represents");
@@ -8307,13 +8474,13 @@ ${Output.list([
         if (isNpc) {
             if (has("init")) {
                 const idRef = useNames ? characterName : characterId;
-                createTokenAction(characterId, ".Init", `%{${idRef}|npc_init}`);
+                createTokenAction(characterId, basicName("Init", noDot), `%{${idRef}|npc_init}`);
             }
             if (has("checks")) {
-                createTokenAction(characterId, ".Check", legacyCreateDropDown('check', characterId, true));
+                createTokenAction(characterId, basicName("Check", noDot), legacyCreateDropDown('check', characterId, true));
             }
             if (has("saves")) {
-                createTokenAction(characterId, ".Save", legacyCreateDropDown('save', characterId, true));
+                createTokenAction(characterId, basicName("Save", noDot), legacyCreateDropDown('save', characterId, true));
             }
             if (has("attacks") || has("action")) {
                 createLegacyRepeating(characterId, characterName, /repeating_npcaction_[^_]+_name\b/, 'repeating_npcaction_%%RID%%_npc_action', useNames, '5e', sortMode);
@@ -8333,16 +8500,19 @@ ${Output.list([
             if (has("spells")) {
                 createLegacySpell(characterId);
             }
+            if (has("pspells")) {
+                createLegacySpell(characterId, true);
+            }
         } else {
             if (has("init")) {
                 const idRef = useNames ? characterName : characterId;
-                createTokenAction(characterId, ".Init", `%{${idRef}|initiative}`);
+                createTokenAction(characterId, basicName("Init", noDot), `%{${idRef}|initiative}`);
             }
             if (has("checks")) {
-                createTokenAction(characterId, ".Check", legacyCreateDropDown('check', characterId, false));
+                createTokenAction(characterId, basicName("Check", noDot), legacyCreateDropDown('check', characterId, false));
             }
             if (has("saves")) {
-                createTokenAction(characterId, ".Save", legacyCreateDropDown('save', characterId, false));
+                createTokenAction(characterId, basicName("Save", noDot), legacyCreateDropDown('save', characterId, false));
             }
             if (has("attacks") || has("action")) {
                 createLegacyRepeating(characterId, characterName, /repeating_attack_[^_]+_atkname\b/, 'repeating_attack_%%RID%%_attack', useNames, '5e', sortMode);
@@ -8356,6 +8526,9 @@ ${Output.list([
             }
             if (has("spells")) {
                 createLegacySpell(characterId);
+            }
+            if (has("pspells")) {
+                createLegacySpell(characterId, true);
             }
         }
 
@@ -8378,10 +8551,17 @@ ${Output.list([
         "sleight_of_hand_bonus", "stealth_bonus", "survival_bonus"
     ];
 
+    // Save bonuses (proficiency included) — confirmed on NPCs and PCs.
+    // Unknown names come back as 0 on Beacon, not an error template.
+    const basicSaveAttrs = [
+        "strength_save_bonus", "dexterity_save_bonus", "constitution_save_bonus",
+        "intelligence_save_bonus", "wisdom_save_bonus", "charisma_save_bonus"
+    ];
+
     // Shared by "saves" and "checks" so a token needing both only pays this
     // fetch once; "init" never calls this.
     async function fetchBasicAbilityBonuses(characterId) {
-        const allAttrs = [...basicAbilityAttrs, ...basicSkillAttrs];
+        const allAttrs = [...basicAbilityAttrs, ...basicSkillAttrs, ...basicSaveAttrs];
 
         const values = await Promise.all(
             allAttrs.map(attr =>
@@ -8404,20 +8584,20 @@ ${Output.list([
         return `| ${label} ${sign}${bonus}, %{selected&#124;${attr}&#125;`;
     }
 
-    function createBasicAbilities(characterId, which, bonuses) {
+    function createBasicAbilities(characterId, which, bonuses, noDot = false) {
         if (which === "init") {
-            createTokenAction(characterId, ".Init", "%{selected|initiative}");
+            createTokenAction(characterId, basicName("Init", noDot), "%{selected|initiative}");
             return;
         }
 
         if (which === "saves") {
             const saveOptionsRaw = [
-                ["Strength", "npc_strength_save", bonuses.strength_bonus],
-                ["Dexterity", "npc_dexterity_save", bonuses.dexterity_bonus],
-                ["Constitution", "npc_constitution_save", bonuses.constitution_bonus],
-                ["Intelligence", "npc_intelligence_save", bonuses.intelligence_bonus],
-                ["Wisdom", "npc_wisdom_save", bonuses.wisdom_bonus],
-                ["Charisma", "npc_charisma_save", bonuses.charisma_bonus]
+                ["Strength", "npc_strength_save", bonuses.strength_save_bonus],
+                ["Dexterity", "npc_dexterity_save", bonuses.dexterity_save_bonus],
+                ["Constitution", "npc_constitution_save", bonuses.constitution_save_bonus],
+                ["Intelligence", "npc_intelligence_save", bonuses.intelligence_save_bonus],
+                ["Wisdom", "npc_wisdom_save", bonuses.wisdom_save_bonus],
+                ["Charisma", "npc_charisma_save", bonuses.charisma_save_bonus]
             ];
 
             const saveOptions = saveOptionsRaw.map(([label, attr, bonus]) => formatBasicAbilityOption(label, attr, bonus));
@@ -8425,7 +8605,7 @@ ${Output.list([
                 saveOptions[saveOptions.length - 1] = saveOptions[saveOptions.length - 1].replace(/&#125;$/, "&#125;}");
             }
             const saveAction = `?{Saving Throw?\n${saveOptions.join("\n")}`;
-            createTokenAction(characterId, ".Save", saveAction);
+            createTokenAction(characterId, basicName("Save", noDot), saveAction);
             return;
         }
 
@@ -8455,7 +8635,7 @@ ${Output.list([
                 checkOptions[checkOptions.length - 1] = checkOptions[checkOptions.length - 1].replace(/&#125;$/, "&#125;}");
             }
             const checkAction = `?{Check?\n${checkOptions.join("\n")}`;
-            createTokenAction(characterId, ".Check", checkAction);
+            createTokenAction(characterId, basicName("Check", noDot), checkAction);
             return;
         }
     }
@@ -8560,12 +8740,17 @@ ${Output.list([
             }
 
             // Classify every selected token by detected sheet type
+            // One entry per character: several selected tokens that
+            // represent the same character are processed once.
             const classified = [];
+            const seenCharacters = new Set();
             for (let token of msg.selected) {
                 const tokenObj = getObj("graphic", token._id);
                 if (!tokenObj) continue;
                 const characterId = tokenObj.get("represents");
                 if (!characterId) continue;
+                if (seenCharacters.has(characterId)) continue;
+                seenCharacters.add(characterId);
                 const sheetType = sheetDetect.detect(characterId);
                 classified.push({ token, tokenObj, characterId, sheetType });
             }
@@ -8613,7 +8798,7 @@ ${Output.list([
 
             const invalid = args.filter(arg => {
                 const lc = arg.toLowerCase();
-                return !validKeywords.includes(lc) && lc !== "name" && lc !== "names" && lc !== "pf2" && lc !== "sort" && lc !== "sorted";
+                return !validKeywords.includes(lc) && lc !== "name" && lc !== "names" && lc !== "pf2" && lc !== "sort" && lc !== "sorted" && lc !== "nodot";
             });
 
             if (invalid.length > 0) {
@@ -8631,6 +8816,7 @@ ${Output.list([
             const useNames = !!parsed.useNames;
             const userSpecified = !!parsed.userSpecified;
             const sortMode = !!parsed.sortMode;
+            const noDot = !!parsed.noDot;
             const sortedSuffix = sortMode ? " (sorted)" : "";
 
             // Priority order: fast sheets (Legacy 5E, PF2, synchronous)
@@ -8672,7 +8858,7 @@ ${Output.list([
                         let missingBasics = [];
 
                         try {
-                            const result = await processBeaconToken(token, categories, useNames, userSpecified, sortMode);
+                            const result = await processBeaconToken(token, categories, useNames, userSpecified, sortMode, noDot);
                             resultCharacterId = result?.characterId || characterId;
                             elapsedMs = result?.elapsedMs ?? null;
                             missingBasics = result?.missingBasics || [];
@@ -8693,7 +8879,7 @@ ${Output.list([
                 } else if (sheetType === "legacy5e") {
                     let errorText = null;
                     try {
-                        processLegacy5eToken(token, categories, useNames, userSpecified, sortMode);
+                        processLegacy5eToken(token, categories, useNames, userSpecified, sortMode, noDot);
                     } catch (err) {
                         ok = false;
                         errorText = String(err);
@@ -8708,7 +8894,7 @@ ${Output.list([
                     // warning whispered alongside it.
                     let errorText = null;
                     try {
-                        processPF2Token(token, categories, useNames, userSpecified);
+                        processPF2Token(token, categories, useNames, userSpecified, noDot);
                     } catch (err) {
                         ok = false;
                         errorText = String(err);
@@ -8759,7 +8945,7 @@ ${Output.list([
 
     // Initialization
     const checkInstall = () => {
-        Logger.log(`-=> Token Action Maker v${version} loaded (development build — Beacon, Legacy 5E, and PF2 all live). Use !ta for token actions. Type !ta help for instructions.`);
+        Logger.log(`-=> Token Action Maker v${version} loaded (Beacon, Legacy 5E, and PF2 all live). Use !ta for token actions. Type !ta help for instructions.`);
         State.initialize();
         return true;
     };
@@ -19806,6 +19992,8 @@ on('ready', () => {
 // Changelog
 // 0.1.0 Initial build — parser, weight engine, rollable table + macro
 //       creation, GM control-panel handout UI
+// 0.1.1 Rollable table items now ALL get the invisible U+2060 prefix (not
+//       just digit-leading); created/rebuilt tables set showplayers=false
 
 
 
@@ -19818,7 +20006,7 @@ const TableMacroBuilder = (() => {
 
   const scriptName = 'TableMacroBuilder';
   const commandName = `!${scriptName}`;
-  const version = '0.1.0';
+  const version = '0.1.1';
   const lastUpdate = 1753142400;
   const schemaVersion = 0.1;
 
@@ -20249,7 +20437,12 @@ const TableMacroBuilder = (() => {
       const rangeMatch = text.match(/^(\d+)\s*[-\u2013\u2014]\s*(\d+)$/);
       if (rangeMatch) {
         const lo = parseInt(rangeMatch[1], 10);
-        const hi = parseInt(rangeMatch[2], 10);
+        let hi = parseInt(rangeMatch[2], 10);
+        // d100 percentile convention: "00" means 100, not 0 (e.g. "97-00"
+        // means 97-100). Only applies when the high side is literally "00"
+        // and the low side is a positive number, so a genuine "0-5" range
+        // elsewhere isn't affected.
+        if (rangeMatch[2] === '00' && lo > 0) hi = 100;
         if (!isNaN(lo) && !isNaN(hi) && hi >= lo) {
           const values = [];
           for (let v = lo; v <= hi; v++) values.push(v);
@@ -20257,7 +20450,11 @@ const TableMacroBuilder = (() => {
         }
       }
 
-      // single integer
+      // single integer — "00" alone also means 100 under the same d100
+      // percentile convention
+      if (text === '00') {
+        return { type: 'single', values: [100] };
+      }
       const singleMatch = text.match(/^\d+$/);
       if (singleMatch) {
         return { type: 'single', values: [parseInt(text, 10)] };
@@ -20482,22 +20679,30 @@ const TableMacroBuilder = (() => {
 
     slugify: (name) => name.replace(/[()," ]+/g, (m) => (m.trim() === '' ? '-' : '')).replace(/-+/g, '-').replace(/^-|-$/g, ''),
 
-    // Roll20 has a known bug: a rollable-table item whose name starts with a
-    // digit gets truncated on roll (e.g. "1d4 gargoyles" rolls back as just
-    // "1"). Workaround: prefix with a zero-width word-joiner (U+2060, same
-    // character as the HTML entity &#8288;) — invisible in the UI, but
-    // stops Roll20 from treating the leading digits as something to strip.
+    // Roll20 has known bugs where a rollable-table item whose name starts
+    // with certain characters (digits, and a few others reported since) is
+    // mangled or truncated on roll (e.g. "1d4 gargoyles" rolls back as just
+    // "1"). Workaround: prefix EVERY entry with a zero-width word-joiner
+    // (U+2060, same character as the HTML entity &#8288;) - invisible in the
+    // UI, but stops Roll20 from misreading the leading character.
     // Applied only at table-creation time, never in the interface/preview.
-    workaroundLeadingDigit: (text) => (/^\d/.test(text) ? `\u2060${text}` : text),
+    // Entries already starting with U+2060 are left alone.
+    prefixInvisible: (text) => {
+      const s = String(text);
+      if (s === '' || s.charAt(0) === '\u2060') return s;
+      return `\u2060${s}`;
+    },
 
     // Creates (or appends to) a rollable table from computed items.
     // tableName should already be a Roll20-safe slug (spaces -> hyphens).
     create: (tableName, items) => {
       let tableObj = findObjs({ _type: 'rollabletable', name: tableName })[0];
       if (!tableObj) {
-        tableObj = createObj('rollabletable', { name: tableName });
+        // showplayers:false = "Players can Roll from table" is unchecked
+        tableObj = createObj('rollabletable', { name: tableName, showplayers: false });
         Logger.log(`Created rollable table "${tableName}"`);
       } else {
+        tableObj.set('showplayers', false);
         const existingItems = findObjs({ _type: 'tableitem', rollabletableid: tableObj.id });
         existingItems.forEach(existing => existing.remove());
         Logger.log(`Rollable table "${tableName}" already exists — cleared ${existingItems.length} item(s) and rebuilding.`);
@@ -20506,7 +20711,7 @@ const TableMacroBuilder = (() => {
       items.forEach(item => {
         createObj('tableitem', {
           rollabletableid: tableObj.id,
-          name: TableBuilder.workaroundLeadingDigit(item.text),
+          name: TableBuilder.prefixInvisible(item.text),
           weight: item.weight
         });
       });
