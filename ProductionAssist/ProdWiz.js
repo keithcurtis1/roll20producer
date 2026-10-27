@@ -1,6 +1,6 @@
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@
 //       PRODWIZ 0.9.30
-//       September 12, 2026
+//       October 27, 2026
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@
 // Changelog
 // 0.9.30
@@ -74,7 +74,7 @@ const Roll20Pro = (() => {
     
     const scriptName = "Roll20 Production Wizard",
         version = "0.9.30",
-        lastUpdated = "Ocotber 27, 2026",
+        lastUpdated = "October 27, 2026",
         
         styles = {
             reset: 'padding: 0; margin: 0;',
